@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 import { Button } from './components/ui/button';
+import { Skeleton } from './components/ui/skeleton';
+import { AuthScreen } from './components/auth/AuthScreen';
+import { LeaderboardPanel } from './components/leaderboard/LeaderboardPanel';
+import { useAuth } from './context/AuthContext';
 import closedChest from './assets/treasure_closed.png';
 import treasureChest from './assets/treasure_opened.png';
 import skeletonChest from './assets/treasure_opened_skeleton.png';
@@ -15,9 +20,11 @@ interface Box {
 }
 
 export default function App() {
+  const { status, user, bestScore, signOut, saveScore } = useAuth();
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [score, setScore] = useState(0);
   const [gameEnded, setGameEnded] = useState(false);
+  const savedGameRef = useRef(false);
 
   const initializeGame = () => {
     // Randomly assign treasure to one box
@@ -67,8 +74,51 @@ export default function App() {
     initializeGame();
   };
 
+  // Persist the finished game's result for signed-in users; guests and unauthenticated visitors never call the backend.
+  useEffect(() => {
+    if (!gameEnded) {
+      savedGameRef.current = false;
+      return;
+    }
+    if (status !== 'authenticated' || savedGameRef.current) return;
+    savedGameRef.current = true;
+
+    const treasureFound = boxes.some((box) => box.isOpen && box.hasTreasure);
+    const boxesOpened = boxes.filter((box) => box.isOpen).length;
+    const result = score > 0 ? 'win' : score < 0 ? 'loss' : 'tie';
+
+    saveScore({ score, result, treasureFound, boxesOpened })
+      .then(() => toast.success('Score saved!'))
+      .catch(() => toast.error('Failed to save score'));
+  }, [gameEnded, status]);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex items-center justify-center p-8">
+        <Skeleton className="h-64 w-64" />
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <AuthScreen />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex flex-col items-center justify-center p-8">
+      <div className="w-full max-w-3xl flex items-center justify-between mb-4 text-sm text-amber-800">
+        <span>{status === 'authenticated' ? `Signed in as ${user?.username}` : 'Playing as Guest'}</span>
+        <div className="flex items-center gap-3">
+          {status === 'authenticated' && bestScore !== null && (
+            <span>Best: <span className="text-green-600">${bestScore}</span></span>
+          )}
+          <LeaderboardPanel />
+          <Button variant="ghost" size="sm" onClick={signOut}>
+            Sign out
+          </Button>
+        </div>
+      </div>
+
       <div className="text-center mb-8">
         <h1 className="text-4xl mb-4 text-amber-900">🏴‍☠️ Treasure Hunt Game 🏴‍☠️</h1>
         <p className="text-amber-800 mb-4">
